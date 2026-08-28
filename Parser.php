@@ -1,5 +1,5 @@
 <?php
-require_once(__DIR__ . "/../thinktank-batch-2/lib/includes.php"); // db configuration class
+require_once(__DIR__ . "/lib/includes.php"); // db configuration class
 
 ini_set('max_execution_time', 300);
 // error_reporting(E_ALL);
@@ -42,9 +42,12 @@ class Parser
 
     function processXmlFeed($rssObj)
     {
-        $xml = getLinkContent($rssObj['link'], true);
+        $xml = $this->getSourceFeedXml($rssObj['link']);
+        $this->logMessage("Feed response bytes: " . strlen($xml));
         $feed = new FeedParser($xml);
+        $this->logMessage("Feed parser created");
         $items = $feed->getItems();
+        $this->logMessage("Feed items: " . count($items));
         foreach ($items as $item) {
             if ($this->counter > $this->maxFeeds)
                 break;
@@ -52,6 +55,8 @@ class Parser
             $link = (is_empty($item->getLink())) ? "" : $item->getLink();
             $title = (is_empty($item->getTitle())) ? "" : cleanString($item->getTitle());
             $guid = (is_empty($item->getGuid())) ? $link : $item->getGuid();
+
+            $this->logMessage("Checking: " . $title);
 
 
 
@@ -61,22 +66,26 @@ class Parser
             //if feed not exists already insert it into db.
 
             if (!$this->dbObj->feed_exists($title, $guid, $rssObj['rss_id'])) {
-                $content = (is_empty($item->getContent())) ? null : $this->cleanContent($item->getContent());
-                $content = cleanString($item->getContent());
+                $rawContent = $item->getContent();
+                $content = is_empty($rawContent) ? null : $this->cleanContent($rawContent);
                 $description = (is_empty($item->getDescription())) ? "" : cleanString($item->getDescription());
                 $pubDate = (is_empty($item->getPubDate())) ? "" : $item->getPubDate();
                 $issue_date = (is_empty($pubDate)) ? "" : date("Y-m-d H:i:s", strtotime($pubDate));
 
                 $category = (is_empty($item->getCategory())) ? "" : $item->getCategory();
                 // ignore video, audio, radio, TV etc category posts
-                if (!isCategoryValid_helper($category))
+                if (!isCategoryValid_helper($category)) {
+                    $this->logMessage("Skipped invalid category: " . $category);
                     continue;
+                }
 
 
                 if ($rssObj['rss_id'] == 5) {
                     // ignore pdfs
-                    if (!isCategoryValid_helper($category, ['Publicacione']))
+                    if (!isCategoryValid_helper($category, ['Publicacione'])) {
+                        $this->logMessage("Skipped source category: " . $category);
                         continue;
+                    }
                 }
                 $author = (is_empty($item->getAuthor())) ? "" : cleanString($item->getAuthor());
                 $wfwCommentRss = (is_empty($item->wfwCommentRss())) ? null : $item->wfwCommentRss();
@@ -85,7 +94,9 @@ class Parser
                 //check if content is null and can be scrap against link
                 if ($content === null) {
                     $function = strtolower(str_replace("-", "_", $rssObj['code']));
-                    if (method_exists($this, $function)) {
+                    if (in_array(strtoupper($rssObj['code']), ['LYP', 'LIBERTADYPROGRESO'], true) && !is_empty($description)) {
+                        $content = $this->cleanContent($description);
+                    } elseif (method_exists($this, $function)) {
                         $content = $this->$function($link);
                         if (is_array($content)) extract($content);
                     } elseif ($rssObj['rss_id'] == 12) {
@@ -99,8 +110,10 @@ class Parser
                 }
                 if ($rssObj['rss_id'] == 12) {
                 }
-                if (!isValidMinWordsLimit($content, 120))
+                if (!isValidMinWordsLimit($content, 120)) {
+                    $this->logMessage("Skipped content under 120 words: " . $title);
                     continue;
+                }
 
                 //if content is not null insert else ignore feed
                 if ($content !== null) {
@@ -120,6 +133,77 @@ class Parser
                 $this->logMessage("Exist Already:" . $title);
             }
         }
+    }
+
+    function getSourceFeedXml($sourceUrl)
+    {
+        if (strpos($sourceUrl, 'libertadyprogresonline.org') === false && strpos($sourceUrl, 'libertadyprogreso.org') === false) {
+            return getLinkContent($sourceUrl, true);
+        }
+
+        $feedUrls = [
+            'https://www.libertadyprogreso.org/index.php/es/actualidad/economia?format=feed&type=rss',
+            'https://www.libertadyprogreso.org/index.php/es/actualidad/politica?format=feed&type=rss',
+            'https://www.libertadyprogreso.org/index.php/es/actualidad/educacion?format=feed&type=rss',
+            'https://www.libertadyprogreso.org/index.php/es/actualidad/internacionales?format=feed&type=rss',
+            'https://www.libertadyprogreso.org/index.php/es/actualidad/gacetilla-de-prensa?format=feed&type=rss',
+            'https://www.libertadyprogreso.org/index.php/es/datos/opinion-y-debate-de-ideas?format=feed&type=rss',
+            'https://www.libertadyprogreso.org/index.php/es/propuestas/investigaciones-de-la-fundacion?format=feed&type=rss',
+            'https://www.libertadyprogreso.org/index.php/es/propuestas/politicas-publicas-2025?format=feed&type=rss'
+        ];
+
+        $merged = new DOMDocument('1.0', 'UTF-8');
+        $merged->formatOutput = true;
+        $rss = $merged->createElement('rss');
+        $rss->setAttribute('version', '2.0');
+        $rss->setAttribute('xmlns:content', 'http://purl.org/rss/1.0/modules/content/');
+        $channel = $merged->createElement('channel');
+        $channel->appendChild($merged->createElement('title', 'Libertad y Progreso Argentina'));
+        $channel->appendChild($merged->createElement('link', 'https://www.libertadyprogreso.org/'));
+        $channel->appendChild($merged->createElement('description', 'Combined Libertad y Progreso feeds'));
+        $rss->appendChild($channel);
+        $merged->appendChild($rss);
+
+        $items = [];
+        foreach ($feedUrls as $feedUrl) {
+            $feedXml = getLinkContent($feedUrl, true);
+            $feedDocument = new DOMDocument();
+            if (!$feedXml || !@$feedDocument->loadXML($feedXml)) {
+                $this->logMessage('Feed unavailable: ' . $feedUrl);
+                continue;
+            }
+
+            foreach ($feedDocument->getElementsByTagName('item') as $item) {
+                if (!($item instanceof DOMElement)) {
+                    continue;
+                }
+
+                $guid = '';
+                foreach (['guid', 'link'] as $tagName) {
+                    $nodes = $item->getElementsByTagName($tagName);
+                    if ($nodes->length > 0 && trim($nodes->item(0)->nodeValue) !== '') {
+                        $guid = trim($nodes->item(0)->nodeValue);
+                        break;
+                    }
+                }
+                if ($guid !== '') {
+                    $items[$guid] = $item;
+                }
+            }
+        }
+
+        uasort($items, function ($first, $second) {
+            $firstDate = strtotime($first->getElementsByTagName('pubDate')->item(0)->nodeValue ?? '') ?: 0;
+            $secondDate = strtotime($second->getElementsByTagName('pubDate')->item(0)->nodeValue ?? '') ?: 0;
+            return $secondDate <=> $firstDate;
+        });
+
+        foreach ($items as $item) {
+            $channel->appendChild($merged->importNode($item, true));
+        }
+
+        $this->logMessage('Combined Argentina feed items: ' . count($items));
+        return $merged->saveXML();
     }
 
     function lydc($link)

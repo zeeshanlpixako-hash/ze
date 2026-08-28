@@ -15,7 +15,7 @@ class db{
 	function __construct() {
 		$this->connect = mysqli_connect($this->host,$this->user,$this->password,$this->database);
 		mysqli_set_charset($this->connect , 'utf8');
-		mysqli_query($this->connect,'SET NAMES utf-8');
+		mysqli_query($this->connect,'SET NAMES utf8mb4');
    }
 
    function get_rss_info($rss_id = 0){
