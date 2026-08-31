@@ -1,5 +1,5 @@
 <?php
-require_once(__DIR__ . "/../thinktank-batch-2/lib/includes.php"); // db configuration class
+require_once(__DIR__ . "/lib/includes.php"); // db configuration class
 
 ini_set('max_execution_time', 300);
 // error_reporting(E_ALL);
@@ -44,7 +44,9 @@ class Parser
     {
         $xml = $this->getSourceFeedXml($rssObj['link']);
         $feed = new FeedParser($xml);
+        $this->logMessage("Feed parser created");
         $items = $feed->getItems();
+        $this->logMessage("Feed items: " . count($items));
         foreach ($items as $item) {
             if ($this->counter > $this->maxFeeds)
                 break;
@@ -52,6 +54,8 @@ class Parser
             $link = (is_empty($item->getLink())) ? "" : $item->getLink();
             $title = (is_empty($item->getTitle())) ? "" : cleanString($item->getTitle());
             $guid = (is_empty($item->getGuid())) ? $link : $item->getGuid();
+
+            $this->logMessage("Checking: " . $title);
 
 
 
@@ -69,14 +73,18 @@ class Parser
 
                 $category = (is_empty($item->getCategory())) ? "" : $item->getCategory();
                 // ignore video, audio, radio, TV etc category posts
-                if (!isCategoryValid_helper($category))
+                if (!isCategoryValid_helper($category)) {
+                    $this->logMessage("Skipped invalid category: " . $category);
                     continue;
+                }
 
 
                 if ($rssObj['rss_id'] == 5) {
                     // ignore pdfs
-                    if (!isCategoryValid_helper($category, ['Publicacione']))
+                    if (!isCategoryValid_helper($category, ['Publicacione'])) {
+                        $this->logMessage("Skipped source category: " . $category);
                         continue;
+                    }
                 }
                 $author = (is_empty($item->getAuthor())) ? "" : cleanString($item->getAuthor());
                 $wfwCommentRss = (is_empty($item->wfwCommentRss())) ? null : $item->wfwCommentRss();
@@ -101,8 +109,10 @@ class Parser
                 }
                 if ($rssObj['rss_id'] == 12) {
                 }
-                if (!isValidMinWordsLimit($content, 120))
+                if (!isValidMinWordsLimit($content, 120)) {
+                    $this->logMessage("Skipped content under 120 words: " . $title);
                     continue;
+                }
 
                 //if content is not null insert else ignore feed
                 if ($content !== null) {
