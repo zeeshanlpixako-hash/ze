@@ -15,7 +15,7 @@ class db{
 	function __construct() {
 		$this->connect = mysqli_connect($this->host,$this->user,$this->password,$this->database);
 		mysqli_set_charset($this->connect , 'utf8');
-		mysqli_query($this->connect,'SET NAMES utf-8');
+		mysqli_query($this->connect,'SET NAMES utf8mb4');
    }
 
    function get_rss_info($rss_id = 0){
@@ -34,7 +34,8 @@ class db{
 			//reutrn true to ignore this feed because its title or guid is empty
 			return true;
 		}
-		$query = "SELECT * FROM wh_rss_content WHERE rss_id = $rss_id AND title='$title' AND guid='$guid'";
+		$guid = $this->escape($guid);
+		$query = "SELECT * FROM wh_rss_content WHERE rss_id = $rss_id AND guid='$guid'";
 		$result = mysqli_query($this->connect, $query) or die(mysqli_error($this->connect));;
 		$no_rows = mysqli_num_rows($result);
 		if($no_rows >0){

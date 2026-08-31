@@ -42,7 +42,7 @@ class Parser
 
     function processXmlFeed($rssObj)
     {
-        $xml = getLinkContent($rssObj['link'], true);
+        $xml = $this->getSourceFeedXml($rssObj['link']);
         $feed = new FeedParser($xml);
         $items = $feed->getItems();
         foreach ($items as $item) {
@@ -61,8 +61,8 @@ class Parser
             //if feed not exists already insert it into db.
 
             if (!$this->dbObj->feed_exists($title, $guid, $rssObj['rss_id'])) {
-                $content = (is_empty($item->getContent())) ? null : $this->cleanContent($item->getContent());
-                $content = cleanString($item->getContent());
+                $rawContent = $item->getContent();
+                $content = is_empty($rawContent) ? null : $this->cleanContent($rawContent);
                 $description = (is_empty($item->getDescription())) ? "" : cleanString($item->getDescription());
                 $pubDate = (is_empty($item->getPubDate())) ? "" : $item->getPubDate();
                 $issue_date = (is_empty($pubDate)) ? "" : date("Y-m-d H:i:s", strtotime($pubDate));
@@ -85,7 +85,9 @@ class Parser
                 //check if content is null and can be scrap against link
                 if ($content === null) {
                     $function = strtolower(str_replace("-", "_", $rssObj['code']));
-                    if (method_exists($this, $function)) {
+                    if (in_array(strtoupper($rssObj['code']), ['LYP', 'LIBERTADYPROGRESO'], true) && !is_empty($description)) {
+                        $content = $this->cleanContent($description);
+                    } elseif (method_exists($this, $function)) {
                         $content = $this->$function($link);
                         if (is_array($content)) extract($content);
                     } elseif ($rssObj['rss_id'] == 12) {
@@ -120,6 +122,81 @@ class Parser
                 $this->logMessage("Exist Already:" . $title);
             }
         }
+    }
+
+    function getSourceFeedXml($sourceUrl)
+    {
+        $this->logMessage('Source URL: ' . $sourceUrl);
+
+        if (strpos($sourceUrl, 'libertadyprogresonline.org') === false && strpos($sourceUrl, 'libertadyprogreso.org') === false) {
+            return getLinkContent($sourceUrl, true);
+        }
+
+        $feedUrls = [
+            'https://www.libertadyprogreso.org/index.php/es/actualidad/economia?format=feed&type=rss',
+            'https://www.libertadyprogreso.org/index.php/es/actualidad/politica?format=feed&type=rss',
+            'https://www.libertadyprogreso.org/index.php/es/actualidad/educacion?format=feed&type=rss',
+            'https://www.libertadyprogreso.org/index.php/es/actualidad/internacionales?format=feed&type=rss',
+            'https://www.libertadyprogreso.org/index.php/es/actualidad/gacetilla-de-prensa?format=feed&type=rss',
+            'https://www.libertadyprogreso.org/index.php/es/datos/opinion-y-debate-de-ideas?format=feed&type=rss'
+        ];
+
+        $merged = new DOMDocument('1.0', 'UTF-8');
+        $merged->formatOutput = true;
+        $rss = $merged->createElement('rss');
+        $rss->setAttribute('version', '2.0');
+        $rss->setAttribute('xmlns:content', 'http://purl.org/rss/1.0/modules/content/');
+        $channel = $merged->createElement('channel');
+        $channel->appendChild($merged->createElement('title', 'Libertad y Progreso Argentina'));
+        $channel->appendChild($merged->createElement('link', 'https://www.libertadyprogreso.org/'));
+        $channel->appendChild($merged->createElement('description', 'Combined Libertad y Progreso feeds'));
+        $rss->appendChild($channel);
+        $merged->appendChild($rss);
+
+        $items = [];
+        foreach ($feedUrls as $feedUrl) {
+            $feedXml = getLinkContent($feedUrl, true);
+            $feedDocument = new DOMDocument();
+            if (!$feedXml || !@$feedDocument->loadXML($feedXml)) {
+                continue;
+            }
+
+            $feedItemCount = 0;
+            foreach ($feedDocument->getElementsByTagName('item') as $item) {
+                if (!($item instanceof DOMElement)) {
+                    continue;
+                }
+
+                $guid = '';
+                foreach (['guid', 'link'] as $tagName) {
+                    $nodes = $item->getElementsByTagName($tagName);
+                    if ($nodes->length > 0 && trim($nodes->item(0)->nodeValue) !== '') {
+                        $guid = trim($nodes->item(0)->nodeValue);
+                        break;
+                    }
+                }
+                if ($guid !== '') {
+                    $items[$guid] = $item;
+                    $feedItemCount++;
+                }
+            }
+
+            if ($feedItemCount === 0) {
+                $this->logMessage('Feed returned no items: ' . $feedUrl);
+            }
+        }
+
+        uasort($items, function ($first, $second) {
+            $firstDate = strtotime($first->getElementsByTagName('pubDate')->item(0)->nodeValue ?? '') ?: 0;
+            $secondDate = strtotime($second->getElementsByTagName('pubDate')->item(0)->nodeValue ?? '') ?: 0;
+            return $secondDate <=> $firstDate;
+        });
+
+        foreach ($items as $item) {
+            $channel->appendChild($merged->importNode($item, true));
+        }
+
+        return $merged->saveXML();
     }
 
     function lydc($link)

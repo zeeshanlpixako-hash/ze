@@ -91,7 +91,7 @@ class FeedParser
 		{
 			// If we have root element namespace for Atom then it's Atom
 			case ($doc_element->namespaceURI == 'http://www.w3.org/2005/Atom'):
-				require_once('Atom.php');
+				require_once(__DIR__ . '/Atom.php');
 				$this->feed = new FeedParserAtom($this->model);
 				break;
 			
@@ -101,7 +101,7 @@ class FeedParser
 
 				$error = "Atom 0.3 deprecated, using 1.0 parser which won't
 				          provide all options";
-				require_once('Atom.php');
+				require_once(__DIR__ . '/Atom.php');				
 				$this->feed = new FeedParserAtom($this->model);				
 				break;
 			
@@ -114,7 +114,7 @@ class FeedParser
 			      && $doc_element->childNodes->item(1)->namespaceURI=='http://purl.org/rss/1.0/'
 				 )):
 
-				 require_once('RDF.php');
+				 require_once(__DIR__ . '/RDF.php');
 
 				 $this->feed = new FeedParserRDF($this->model, '1.0');
 				 break;
@@ -126,7 +126,7 @@ class FeedParser
 			      && $doc_element->childNodes->length > 1 
 			      && $doc_element->childNodes->item(1)->namespaceURI=='http://purl.org/rss/1.1/'
 				 )):
-				require_once('RDF.php');
+				require_once(__DIR__ . '/RDF.php');
 
 				$this->feed = new FeedParserRDF($this->model, '1.1');
 				break;
@@ -139,7 +139,7 @@ class FeedParser
 			       && $doc_element->childNodes->item(1)->namespaceURI=='http://my.netscape.com/rdf/simple/0.9/'
 				  )):
 
-				require_once('RDF.php');
+				require_once(__DIR__ . '/RDF.php');
 
 				$this->feed = new FeedParserRDF($this->model, '0.90');
 				break;
@@ -151,7 +151,7 @@ class FeedParser
 			      && $doc_element->getAttribute('version') == 0.91):
 
 				$error = 'RSS 0.91 has been superceded by RSS2.0. Using RSS2.0 parser.';
-				require_once('RSS2.php');
+				require_once(__DIR__ . '/RSS2.php');
 				$this->feed = new FeedParserRSS2($this->model);
 				break;
 
@@ -162,7 +162,7 @@ class FeedParser
 			      && $doc_element->getAttribute('version') == 0.92):
 
 				$error = 'RSS 0.92 has been superceded by RSS2.0. Using RSS2.0 parser.';
-				require_once('RSS2.php');
+				require_once(__DIR__ . '/RSS2.php');
 				$this->feed = new FeedParserRSS2($this->model);
 				break;
 		
@@ -175,7 +175,7 @@ class FeedParser
 				    || $doc_element->getAttribute('version') != 2) 
 					$error = 'RSS version not specified. Parsing as RSS2.0';
 			
-				require_once('RSS2.php');
+				require_once(__DIR__ . '/RSS2.php');	
 				$this->feed = new FeedParserRSS2($this->model);	
 				break;
 	
